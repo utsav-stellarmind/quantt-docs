@@ -1,6 +1,6 @@
 # Auth API — React Native integration guide
 
-This document describes Quantt **email/password auth** and related endpoints from a **React Native** perspective: signup, login (including MFA), refresh tokens, forgot/reset password, email verification, and logout.
+This document describes Quantt **email/password auth** and related endpoints from a **React Native** perspective: signup, login (including MFA), **TOTP / 2FA enrollment**, refresh tokens, forgot/reset password, email verification, and logout.
 
 For **Google OAuth** on mobile, see [google-oauth-react-native.md](./google-oauth-react-native.md).
 
@@ -25,7 +25,7 @@ All paths below are relative to this base.
 
 - Sent on protected routes as: **`Authorization: Bearer <accessToken>`**
 - Alternatively, the web app uses the **`quantts_access`** cookie; React Native should prefer the **Bearer** header.
-- Payload includes at least: `id`, `email`, `role`, `name`.
+- Payload includes at least: `id`, `email`, `role`, `name`, and **`totpEnabled`** (boolean) when issued by the current API — clients can use it for UI (e.g. security settings) without an extra profile call.
 - **Lifetime:** about **15 minutes** (see `buildSession` in `apps/api/src/services/auth-service.ts`).
 
 ### Refresh token (JWT)
@@ -177,6 +177,8 @@ If the user has TOTP enabled, the response is **not** a full session:
 - **`mfaPendingToken`** is short-lived (about **5 minutes**). It is **not** a refresh token.
 - Show the user a 6-digit (or backup) code field, then call **`POST /v1/auth/totp/challenge`** (below).
 
+The same **`mfaRequired` / `mfaPendingToken`** pattern applies when signing in with **Google** (`POST /v1/auth/google/token` on native) or **wallet** (`POST /v1/auth/wallet/verify`) if the account has TOTP enabled. The web Google flow redirects to `/login?google_mfa=1&token=...` until the user completes **`/v1/auth/totp/challenge`**.
+
 ### Errors
 
 | Status | Meaning |
@@ -213,7 +215,122 @@ If the user has TOTP enabled, the response is **not** a full session:
 
 ---
 
-## 5. Refresh session
+## 5. Configure TOTP — enable and disable 2FA
+
+TOTP (RFC 6238) adds a second factor: the user scans a QR (or enters a secret) into an **authenticator app** (Google Authenticator, Authy, 1Password, etc.), then proves they can generate 6-digit codes. After enrollment, **login** (password, Google, or wallet) may return **`mfaRequired`** until the user completes **`POST /v1/auth/totp/challenge`** (see **§4** above).
+
+All setup/disable routes require a **valid access token**:
+
+```http
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+### Flow overview (React Native)
+
+1. User is already logged in (has `accessToken`).
+2. **`POST /v1/auth/totp/setup`** → show QR from `otpauthUrl` (or manual `secret`), display **`backupCodes`** once for the user to save offline.
+3. User enters the **current 6-digit code** from the authenticator app → **`POST /v1/auth/totp/verify-setup`**.
+4. Optionally **`POST /v1/auth/refresh`** (or wait for natural expiry) so the new access JWT includes **`totpEnabled: true`** for UI toggles, or track “2FA on” locally after a successful verify-setup.
+
+To turn 2FA off, call **`POST /v1/auth/totp/disable`** with the account **password** (accounts without a password cannot use this route until a password exists).
+
+---
+
+### `POST /v1/auth/totp/setup`
+
+**Auth:** Bearer **required**.
+
+**Rate limit:** none beyond global API limits.
+
+**Body:** empty JSON object `{}` (or omit body if your client sends `{}`).
+
+**Success (`200`):**
+
+```json
+{
+  "secret": "<base32-secret>",
+  "otpauthUrl": "otpauth://totp/...",
+  "backupCodes": ["ABCD1234", "..."]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `secret` | Raw shared secret (Base32). User can type this into an authenticator app if they cannot scan a QR. |
+| `otpauthUrl` | Standard `otpauth://` URI — encode this into a **QR code** in the app (e.g. `react-native-qrcode-svg`) so the user can scan with their authenticator. |
+| `backupCodes` | **10** one-time recovery codes (plaintext **only in this response**). User must store them securely; the server stores only hashes. |
+
+**Server behavior:** Creates a pending TOTP secret on the user; **`totpEnabled` stays `false`** until **`verify-setup`** succeeds. Calling setup again overwrites the pending secret and issues new backup codes.
+
+**Errors:** `401` if access token missing/invalid; `400` if business rules fail (see API logs / message).
+
+---
+
+### `POST /v1/auth/totp/verify-setup`
+
+**Auth:** Bearer **required**.
+
+**Body:**
+
+```json
+{ "code": "123456" }
+```
+
+| Field | Constraints |
+|-------|----------------|
+| `code` | **Exactly 6** digits — the current TOTP from the authenticator app after scanning / entering the secret from `setup`. |
+
+**Success (`200`):**
+
+```json
+{ "message": "Two-factor authentication enabled." }
+```
+
+**Effect:** Sets **`totpEnabled: true`** on the user. Future logins will require **`/v1/auth/totp/challenge`** (unless the user disables 2FA).
+
+**Errors:**
+
+| Status | Meaning |
+|--------|---------|
+| `400` | Setup not started (`/totp/setup` first), or invalid 6-digit code |
+
+---
+
+### `POST /v1/auth/totp/disable`
+
+**Auth:** Bearer **required**.
+
+**Body:**
+
+```json
+{ "password": "<account password>" }
+```
+
+**Success (`200`):**
+
+```json
+{ "message": "Two-factor authentication disabled." }
+```
+
+**Effect:** Clears TOTP secret and backup codes; **`totpEnabled`** becomes **`false`**.
+
+**Errors:**
+
+| Status | Meaning |
+|--------|---------|
+| `400` | No password on file (e.g. some OAuth-only accounts) — user must set a password before this path works. |
+| `401` | Wrong password |
+
+---
+
+### Backend ops: `TOTP_ENCRYPTION_KEY`
+
+If **`TOTP_ENCRYPTION_KEY`** is set in the API environment, the server **encrypts** the TOTP secret at rest. If unset, the secret is stored in a less hardened form (development convenience). See `apps/api/src/config/env.ts` and `apps/api/src/lib/totp.js`.
+
+---
+
+## 6. Refresh session
 
 ### `POST /v1/auth/refresh`
 
@@ -237,7 +354,7 @@ If `refreshToken` is omitted, the server falls back to the **`quantts_refresh`**
 
 ---
 
-## 6. Forgot password
+## 7. Forgot password
 
 ### `POST /v1/auth/forgot-password`
 
@@ -261,7 +378,7 @@ If `refreshToken` is omitted, the server falls back to the **`quantts_refresh`**
 
 ---
 
-## 7. Reset password
+## 8. Reset password
 
 ### `POST /v1/auth/reset-password`
 
@@ -294,7 +411,7 @@ If `refreshToken` is omitted, the server falls back to the **`quantts_refresh`**
 
 ---
 
-## 8. Logout
+## 9. Logout
 
 ### `POST /v1/auth/logout`
 
@@ -326,7 +443,7 @@ Revokes **all** refresh sessions for the user. Use for “sign out everywhere”
 
 ---
 
-## 9. Calling protected APIs
+## 10. Calling protected APIs
 
 Use:
 
@@ -341,7 +458,7 @@ Example mobile routes (all require auth): `GET /v1/mobile/overview`, etc. (`apps
 
 ---
 
-## 10. Optional: session management
+## 11. Optional: session management
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
@@ -358,10 +475,11 @@ Cookie-based “current session” detection may not match native; treat as best
 1. **Config:** `QUANTT_API_BASE_URL` (or equivalent) pointing at the API, not the Next.js site (unless you proxy).
 2. **Signup** → show “check email” → **verify** via web link or `POST /v1/auth/verify-email` with parsed `token`.
 3. **Login** → if `mfaRequired`, show TOTP UI → **`/v1/auth/totp/challenge`** → store session.
-4. **HTTP client:** Attach `Authorization: Bearer` on each request; on **401**, call **`/v1/auth/refresh`**, retry once, else clear storage and navigate to login.
-5. **Refresh:** Always send `refreshToken` in JSON; **update** secure storage with both new tokens.
-6. **Forgot password:** Collect email → `forgot-password` → user completes **`reset-password`** on web or in-app with `token` + new password.
-7. **Logout:** Send Bearer + `refreshToken` in body; clear local storage.
+4. **Optional 2FA:** Logged-in user → **`/v1/auth/totp/setup`** (show QR + backup codes) → **`/v1/auth/totp/verify-setup`** with 6-digit code → refresh token if you need JWT `totpEnabled: true` in the client.
+5. **HTTP client:** Attach `Authorization: Bearer` on each request; on **401**, call **`/v1/auth/refresh`**, retry once, else clear storage and navigate to login.
+6. **Refresh:** Always send `refreshToken` in JSON; **update** secure storage with both new tokens.
+7. **Forgot password:** Collect email → `forgot-password` → user completes **`reset-password`** on web or in-app with `token` + new password.
+8. **Logout:** Send Bearer + `refreshToken` in body; clear local storage.
 
 ---
 
@@ -372,6 +490,7 @@ Cookie-based “current session” detection may not match native; treat as best
 | `APP_URL` | Base for **verification** and **password reset** links in emails (`/verify-email`, `/reset-password`). Should be your **web** URL users can open. |
 | `SMTP_*`, `EMAIL_FROM` | If unset, dev may log emails to console instead of sending (`apps/api/src/lib/email.ts`). |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | Issuing/verifying access and refresh JWTs (server only). |
+| `TOTP_ENCRYPTION_KEY` | Optional; encrypts TOTP secrets at rest (see [§5](#5-configure-totp--enable-and-disable-2fa)). |
 
 Google-specific variables are documented in [google-oauth-react-native.md](./google-oauth-react-native.md).
 
@@ -395,3 +514,4 @@ Google-specific variables are documented in [google-oauth-react-native.md](./goo
 | Date | Change |
 |------|--------|
 | 2026-05-20 | Initial version: RN-focused auth API (signup, verify, login, MFA, refresh, forgot/reset, logout). |
+| 2026-05-20 | Added §5 TOTP setup/verify/disable endpoints and `TOTP_ENCRYPTION_KEY`; renumbered later sections. |
