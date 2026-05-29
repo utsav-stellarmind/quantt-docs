@@ -1,0 +1,274 @@
+QUANTT Platform — Project Scope Document
+
+1. Project Overview
+QUANTT is an AI-powered autonomous trading platform built on the Lithosphere blockchain.
+Instead of a human watching charts manually, a user deploys an AI agent that:
+Researches the market
+Makes a trade decision
+Checks risk rules
+Executes the trade on a DEX
+Records every decision on-chain
+All of this happens automatically, 24/7.
+For companies (B2B), QUANTT also exposes the same AI engine as an API service, billed in QUANTT tokens with on-chain payment verification.
+
+4. Web App — Feature Scope
+4.1 Sign Up & Login
+Email and password registration and login
+EVM wallet login (MetaMask / Lithosphere wallet) — SIWE-style challenge/sign/verify
+JWT access token (15 min) + refresh token rotation (30 days)
+Tokens stored in httpOnly cookies
+SSO and 2FA 
+
+4.2 Dashboard
+Portfolio summary — total equity, PnL, Sharpe ratio
+Active agents list with status
+Activity feed — recent agent actions
+Risk snapshot — current exposure and daily loss
+Alerts panel
+Real-time telemetry stream via Server-Sent Events (SSE)
+Portfolio performance charts
+
+4.3 Live Market Data
+Real-time price and volume per symbol
+OHLCV candlestick charts
+Technical indicators — MACD, RSI
+Sentiment scores and news feed
+
+
+4.4 Create Agent
+Set agent name and strategy type
+Set capital allocation and risk level
+Configure:
+Chains
+Max loss
+Max position
+Aggressiveness
+Frequency
+Autopilot toggle (fully autonomous)
+
+4.5 Agent Detail
+Agent configuration summary
+Activity and trade history
+Live telemetry per agent
+Open positions
+AI reasoning summary
+Start / Pause / Stop / Edit controls
+Emergency kill switch
+
+4.6 Portfolio & Performance
+Total equity and PnL
+Open positions across all chains
+Chain-specific balances
+Performance charts and drawdown history
+Sharpe ratio and win rate
+
+4.7 Billing & Subscription
+Subscription plan selection
+Usage cost breakdown
+Invoice history with payment status
+QUANTT token billing
+Self-serve plan upgrade
+
+4.8 Enterprise Admin Dashboard
+Tenant management
+Invoice overview and payment tracking
+API key management
+User role assignment
+Admin user management:
+Create users
+Delete users
+Assign roles
+
+5. Mobile App — Feature Scope
+5.1 Sign Up & Login
+Email and password login
+EVM wallet login (MetaMask / Lithosphere)
+Biometric login — Face ID / fingerprint
+SSO and 2FA
+
+5.2 Home Dashboard
+Portfolio summary — equity, PnL, Sharpe
+Active agents list
+Activity feed
+Risk snapshot
+Real-time telemetry stream
+
+5.3 Agents
+Full agent list with status, strategy, and PnL
+Create agent — same fields as web
+Agent detail:
+Config
+Activity
+Positions
+Start / Pause / Stop / Delete controls
+
+5.4 Live Tab
+Real-time stream of every agent action:
+Market analysis
+Analyst debate
+Trade decision
+Risk check
+Trade execution result
+
+5.5 Portfolio
+Total equity and PnL
+Open positions
+Chain-specific balances
+Performance charts
+
+5.6 Insights (Pro / Operator and Above)
+Per-agent win rate and model confidence
+AI reasoning breakdown by analyst
+Strategy contribution chart
+Coordination graph
+Fleet health overview
+
+5.7 Wallet & Payments
+QUANTT token balance
+USD value
+Transaction history
+Pay invoices on-chain
+
+5.8 Billing
+Subscription plan
+Usage cost
+Invoice list with status:
+Paid
+Pending
+Overdue
+
+5.9 Alerts
+Trade alerts
+Risk alerts
+System alerts
+Billing alerts
+Market alerts
+Push notification delivery
+
+5.10 Copilot (AI Assistant)
+Chat with AI about portfolio and agents
+Ask for reasoning behind trades
+Control agents via natural language
+Get strategy suggestions
+
+5.11 Marketplace
+Browse strategy templates
+Social leaderboard
+Subscribe to strategies
+Deploy agents from templates
+
+5.12 Enterprise Screen
+Fleet health percentage
+Active operators and open incidents
+Node status and latency monitoring
+
+5.13 Settings & Security
+Emergency kill switch for all agents
+Risk rule configuration
+Connected wallets management
+Notification preferences
+
+6. Backend & AI Engine — Feature Scope
+6.1 Authentication API
+Email/password login with bcrypt
+EVM wallet challenge → sign → verify (viem / SIWE)
+JWT issue, refresh, and revoke
+Redis-backed nonce storage with TTL
+
+6.2 AI Trading Engine
+AI Workflow
+Fundamental Analyst
+Sentiment Analyst
+News Analyst
+Technical Analyst
+These analysts run in parallel.
+Decision Pipeline
+Research Lead forms consensus
+Trader Agent generates trade intent:
+Symbol
+Side
+Size
+Rationale
+Risk Manager validates against user rules
+Execution Router selects best DEX and chain
+Additional Features
+Every decision hashed and committed to Lithosphere blockchain
+Supports:
+Manual trigger
+Scheduled runs
+Event-driven triggers
+Historical backtesting engine (Pro, Admin, Enterprise)
+
+6.3 Real Market Data
+Live price and OHLCV feed
+MACD and RSI calculation
+Market sentiment scores
+News feed integration
+
+6.4 DEX Trade Execution
+Supported DEXes
+Chain
+DEX
+Base
+Uniswap V3, SushiSwap
+Arbitrum
+Uniswap V3, SushiSwap
+BNB Chain
+PancakeSwap, SushiSwap
+LITHO
+Lithosphere DEX (in progress)
+
+Execution Features
+Best price router
+Chain selector
+Transaction signing
+On-chain submission
+Confirmation tracking
+tx_hash storage
+
+6.6 Enterprise API (B2B)
+Organization registration
+API key generation (SHA-256 hashed)
+Sub-user creation:
+Owner
+Member
+Viewer
+Usage metering per API call
+Redis token-bucket rate limiting
+Monthly invoice generation
+On-chain ERC-20 payment verification
+Webhook reconciliation
+
+6.7 Real-Time Telemetry
+AI engine publishes events to Redis (quantt.telemetry.v1)
+Node.js API pushes updates via SSE
+Web and mobile clients receive live updates
+
+7. Technology Stack
+Layer
+Technology
+Web Frontend
+Next.js 15, React 18, TypeScript
+Mobile Frontend
+Expo 52, React Native 0.76, TypeScript
+API Gateway
+Fastify 5, Node.js, TypeScript
+AI Engine
+FastAPI, Python 3.11
+Database
+PostgreSQL (Prisma + SQLAlchemy + Alembic)
+Cache / Realtime
+Redis (pub/sub + rate limiting)
+LLM Provider
+OpenAI GPT-4
+Blockchain
+Lithosphere EVM (Chain ID 1890)
+Auth
+JWT, bcrypt, SIWE wallet signature (viem)
+Payments
+QUANTT ERC-20 token
+Containerization
+Docker, Docker Compose
+
+
+

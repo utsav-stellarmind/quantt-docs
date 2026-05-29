@@ -2,6 +2,8 @@
 
 This document describes how the Quantt **API** exposes Google sign-in and how a **React Native** app should integrate. Web flow is summarized for context only.
 
+For **email/password** auth (signup, login, refresh, forgot password), see [auth-api-react-native.md](./auth-api-react-native.md).
+
 ---
 
 ## Base URL
@@ -53,11 +55,10 @@ Content-Type: application/json
 }
 ```
 
-**Success (`200`):** Same shape as email/password login — JSON with:
+**Success (`200`):** Either:
 
-- `accessToken` — JWT, short-lived (e.g. 15m).
-- `refreshToken` — JWT for session renewal.
-- `user` — `{ id, email, role, name }`.
+- **Full session** (same shape as email/password login): `accessToken`, `refreshToken`, `user` (`id`, `email`, `role`, `name`), **or**
+- **MFA required** (when the user has TOTP enabled): `{ "mfaRequired": true, "mfaPendingToken": "<jwt>" }` — then call `POST /v1/auth/totp/challenge` with `mfaPendingToken` and the 6-digit code (same as password login); response includes tokens to store.
 
 **Error responses:**
 
